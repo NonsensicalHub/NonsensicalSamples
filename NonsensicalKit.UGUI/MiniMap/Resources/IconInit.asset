@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9002f043dbca02342b6f05da3e304807, type: 3}
+  m_Name: IconInit
+  m_EditorClassIdentifier: 
+  data:
+    ConfigID: ID6a59c5cb
+    Icons:
+    - Type: Player
+      Prefab: {fileID: 8954741391738344824, guid: aafa8d17170137c479bcb93245dbfdba, type: 3}
+      Path: ICON/playerIcon
+    - Type: Point
+      Prefab: {fileID: 4286715308805129031, guid: 4f8fd4896d3ea514aa6a648fafe5fe05, type: 3}
+      Path: ICON/point
+    - Type: Measure
+      Prefab: {fileID: 8893822506548427945, guid: 0b067797dacf6384b86cd428e5c1235d, type: 3}
+      Path: ICON/MeasureArea

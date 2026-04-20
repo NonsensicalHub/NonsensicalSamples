@@ -1,0 +1,5 @@
+{
+	"displayName":"NonsensicalTemplate",
+	"description": "WebGL模板，将WebGLTemplates文件夹放至Assets文件夹中，即可在PlayerSetting-Resolution and Presentation-WebGlTemplate中选择对应的模板",
+	"createSeparatePackage": false
+}
