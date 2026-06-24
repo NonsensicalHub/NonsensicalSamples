@@ -287,8 +287,12 @@
      */
     function sendToUnityWebGL(jsonData)
     {
-        if (!state.useWebGL) return;
-        sendMessageToUnity("RemoteInput", jsonData);
+        if (!state.useWebGL) return;       
+ window.parent.postMessage({
+    type: "RemoteInput",
+    data: jsonData
+}, "*");
+        //sendMessageToUnity("RemoteInput", jsonData);
     }
     /**
      * 通过WebSocket发送数据

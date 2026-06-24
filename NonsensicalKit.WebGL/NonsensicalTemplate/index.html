@@ -41,11 +41,20 @@
     #if Use_Iframe
     <script src="JavaScripts/webIframe.js"></script>
     #endif
-    #if USE_REMOTE_INPUT
-    <script src="JavaScripts/remoteInputUnity.js"></script>
-    <script src="JavaScripts/remoteInput.js"></script>
-    #endif
     <script>
+        
+    #if USE_REMOTE_INPUT
+window.addEventListener("message", e => {
+    
+    if(e.data.type=="RemoteInput")
+{
+    console.log(e.data.data);
+    sendMessageToUnity("RemoteInput", e.data.data);
+}
+});
+    #endif
+
+
         const showFullScreenButton = "{{{ SHOW_FULL_SCREEN_BUTTON }}}";
         const buildUrl = "Build";
         const loaderUrl = buildUrl + "/{{{ LOADER_FILENAME }}}";
