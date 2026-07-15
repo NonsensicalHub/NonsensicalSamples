@@ -1233,6 +1233,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_warehouseName: Test
+  m_autoInit: 1
+  m_defaultShowAllCargo: 1
   m_cargoPrefabs:
   - {fileID: 2485050362730950308, guid: c21538021cd1fc04cbd0cb436499b410, type: 3}
   m_highlightCargo: {fileID: 609389530}
