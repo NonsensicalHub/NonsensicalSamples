@@ -13,8 +13,6 @@ Shader "TemperatureVisualization/VolumeRaymarch"
         _DensityScale ("Density Scale", Float) = 1.5
         _EdgeSoftness ("Edge Softness", Range(0, 1)) = 0.35
         _NoiseScale ("Noise Scale", Float) = 4
-        _BoundsMin ("Bounds Min", Vector) = (0, 0, 0, 0)
-        _BoundsMax ("Bounds Max", Vector) = (1, 1, 1, 0)
     }
 
     SubShader
@@ -59,8 +57,6 @@ Shader "TemperatureVisualization/VolumeRaymarch"
                 float _DensityScale;
                 float _EdgeSoftness;
                 float _NoiseScale;
-                float4 _BoundsMin;
-                float4 _BoundsMax;
             CBUFFER_END
 
             struct Attributes
@@ -71,8 +67,7 @@ Shader "TemperatureVisualization/VolumeRaymarch"
             struct Varyings
             {
                 float4 positionCS : SV_POSITION;
-                float3 rayOriginWS : TEXCOORD0;
-                float3 rayDirWS : TEXCOORD1;
+                float3 positionOS : TEXCOORD0;
             };
 
             Varyings Vert(Attributes input)
@@ -80,8 +75,7 @@ Shader "TemperatureVisualization/VolumeRaymarch"
                 Varyings output;
                 float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
                 output.positionCS = TransformWorldToHClip(positionWS);
-                output.rayOriginWS = _WorldSpaceCameraPos;
-                output.rayDirWS = normalize(positionWS - _WorldSpaceCameraPos);
+                output.positionOS = input.positionOS.xyz;
                 return output;
             }
 
@@ -143,42 +137,37 @@ Shader "TemperatureVisualization/VolumeRaymarch"
 
             float4 Frag(Varyings input) : SV_Target
             {
-                float3 boundsMin = _BoundsMin.xyz;
-                float3 boundsMax = _BoundsMax.xyz;
-                float3 boundsSize = max(boundsMax - boundsMin, float3(0.0001, 0.0001, 0.0001));
-                float invBoundsX = rcp(boundsSize.x);
-                float invBoundsY = rcp(boundsSize.y);
-                float invBoundsZ = rcp(boundsSize.z);
-                float invTempRange = rcp(max(_TempMax - _TempMin, 0.0001));
-                float edgeSoft = _EdgeSoftness;
-                float edgeThresh = edgeSoft * 0.25 + 0.001;
-                float noiseAmp = edgeSoft * 0.35;
-                bool useNoise = edgeSoft > 0.001;
+                // 在体积物体局部空间求交并采样，与插值网格 / 父物体变换一致
+                float3 rayOriginOS = TransformWorldToObject(_WorldSpaceCameraPos);
+                float3 rayDirOS = input.positionOS - rayOriginOS;
 
                 float tEnter;
                 float tExit;
-                if (!IntersectAABB(input.rayOriginWS, input.rayDirWS, boundsMin, boundsMax, tEnter, tExit))
+                if (!IntersectAABB(rayOriginOS, rayDirOS, float3(-0.5, -0.5, -0.5), float3(0.5, 0.5, 0.5), tEnter, tExit))
                 {
                     discard;
                 }
 
                 tEnter = max(tEnter, 0.0);
-                int steps = max((int)_StepCount, 8);
+                int steps = clamp((int)_StepCount, 8, 128);
                 float stepSize = (tExit - tEnter) / steps;
-                float3 rayDir = input.rayDirWS;
-                float3 rayOrigin = input.rayOriginWS;
+                float invTempRange = rcp(max(_TempMax - _TempMin, 0.0001));
+                float edgeSoft = _EdgeSoftness;
+                float edgeThresh = edgeSoft * 0.25 + 0.001;
+                float noiseAmp = edgeSoft * 0.35;
+                bool useNoise = edgeSoft > 0.001;
+                float densityScale = _DensityScale;
 
                 half4 accum = half4(0, 0, 0, 0);
                 float t = tEnter;
-                float densityScale = _DensityScale;
 
                 [loop]
-                for (int i = 0; i < 128; i++)
+                for (int i = 0; i < steps; i++)
                 {
-                    if (i >= steps || accum.a >= 0.98) break;
+                    if (accum.a >= 0.98h) break;
 
-                    float3 pos = rayOrigin + rayDir * t;
-                    float3 uvw = saturate((pos - boundsMin) * float3(invBoundsX, invBoundsY, invBoundsZ));
+                    float3 posOS = rayOriginOS + rayDirOS * t;
+                    float3 uvw = saturate(posOS + 0.5);
                     float temperature = SampleTemperature(uvw);
                     float normalized = saturate((temperature - _TempMin) * invTempRange);
 
@@ -189,7 +178,8 @@ Shader "TemperatureVisualization/VolumeRaymarch"
                     float density;
                     if (useNoise)
                     {
-                        float noise = Noise3D(pos * _NoiseScale) * noiseAmp;
+                        float3 posWS = TransformObjectToWorld(posOS);
+                        float noise = Noise3D(posWS * _NoiseScale) * noiseAmp;
                         density = saturate(normalized * densityScale + noise) * edge;
                     }
                     else
@@ -198,11 +188,10 @@ Shader "TemperatureVisualization/VolumeRaymarch"
                     }
 
                     half4 sampleColor = SAMPLE_TEXTURE2D(_ColorRamp, sampler_ColorRamp, float2(normalized, 0.5));
-                    sampleColor.a *= density * _Opacity;
-
-                    float oneMinusA = 1.0 - accum.a;
-                    accum.rgb += oneMinusA * sampleColor.a * sampleColor.rgb;
-                    accum.a += oneMinusA * sampleColor.a;
+                    half sampleAlpha = sampleColor.a * (half)(density * _Opacity);
+                    half oneMinusA = 1.0h - accum.a;
+                    accum.rgb += oneMinusA * sampleAlpha * sampleColor.rgb;
+                    accum.a += oneMinusA * sampleAlpha;
 
                     t += stepSize;
                 }

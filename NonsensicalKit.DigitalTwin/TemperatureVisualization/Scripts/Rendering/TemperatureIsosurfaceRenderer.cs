@@ -35,9 +35,9 @@ namespace TemperatureVisualization
         private Vector3[] m_CubeCorners = new Vector3[8];
         private float[] m_CornerValues = new float[8];
         private Vector3[] m_EdgeVertexCache = new Vector3[12];
-        private bool[] m_EdgeComputed = new bool[12];
         private Color m_LastIsoColor;
         private bool m_HasLastIsoColor;
+        private bool m_Visible;
 
         public float IsoTemperature { get => m_IsoTemperature; set => m_IsoTemperature = value; }
         public int GridResolution { get => m_GridResolution; set => m_GridResolution = Mathf.Clamp(value, 8, 64); }
@@ -71,7 +71,18 @@ namespace TemperatureVisualization
 
         public void SetEnabled(bool enabled)
         {
+            m_Visible = enabled;
             if (m_MeshRenderer != null) m_MeshRenderer.enabled = enabled;
+        }
+
+        public void SyncBoundsTransform(TemperatureVolumeBounds bounds)
+        {
+            bounds?.ApplyVolumeTransform(transform);
+        }
+
+        public bool SyncBoundsTransformIfChanged(TemperatureVolumeBounds bounds)
+        {
+            return bounds != null && bounds.ApplyVolumeTransformIfChanged(transform);
         }
 
         public void RebuildMesh(
@@ -83,6 +94,7 @@ namespace TemperatureVisualization
         {
             if (interpolator == null || bounds == null || colorRamp == null || !interpolator.HasBuffer) return;
 
+            SyncBoundsTransform(bounds);
             EnsureMaterial(colorRamp, tempMin, tempMax, m_IsoTemperature);
 
             int dataRes = interpolator.Resolution;
@@ -104,9 +116,6 @@ namespace TemperatureVisualization
 
             int vertCount = 0;
             int triCount = 0;
-            Bounds worldBounds = bounds.WorldBounds;
-            Vector3 bmin = worldBounds.min;
-            Vector3 bsize = worldBounds.size;
             float invResMinus1 = 1f / resMinus1;
 
             for (int z = 0; z < resMinus1; z++)
@@ -115,8 +124,6 @@ namespace TemperatureVisualization
                 {
                     for (int x = 0; x < resMinus1; x++)
                     {
-                        System.Array.Clear(m_EdgeComputed, 0, 12);
-
                         for (int i = 0; i < 8; i++)
                         {
                             Vector3Int c = s_CubeCornerOffset[i];
@@ -127,10 +134,10 @@ namespace TemperatureVisualization
                             if (directGrid)
                             {
                                 m_CornerValues[i] = interpolator.SampleBuffer(gx, gy, gz);
-                                float nx = gx * invResMinus1;
-                                float ny = gy * invResMinus1;
-                                float nz = gz * invResMinus1;
-                                m_CubeCorners[i] = bmin + new Vector3(nx * bsize.x, ny * bsize.y, nz * bsize.z);
+                                float nx = gx * invResMinus1 - 0.5f;
+                                float ny = gy * invResMinus1 - 0.5f;
+                                float nz = gz * invResMinus1 - 0.5f;
+                                m_CubeCorners[i] = new Vector3(nx, ny, nz);
                             }
                             else
                             {
@@ -138,10 +145,10 @@ namespace TemperatureVisualization
                                 int sy = gy * dataResMinus1 / resMinus1;
                                 int sz = gz * dataResMinus1 / resMinus1;
                                 m_CornerValues[i] = interpolator.SampleBuffer(sx, sy, sz);
-                                float nx = sx * invDataResMinus1;
-                                float ny = sy * invDataResMinus1;
-                                float nz = sz * invDataResMinus1;
-                                m_CubeCorners[i] = bmin + new Vector3(nx * bsize.x, ny * bsize.y, nz * bsize.z);
+                                float nx = sx * invDataResMinus1 - 0.5f;
+                                float ny = sy * invDataResMinus1 - 0.5f;
+                                float nz = sz * invDataResMinus1 - 0.5f;
+                                m_CubeCorners[i] = new Vector3(nx, ny, nz);
                             }
                         }
 
@@ -158,7 +165,6 @@ namespace TemperatureVisualization
                         {
                             if ((edgeFlags & (1 << i)) == 0) continue;
                             m_EdgeVertexCache[i] = InterpolateEdge(i, m_CubeCorners, m_CornerValues, iso);
-                            m_EdgeComputed[i] = true;
                         }
 
                         for (int i = 0; MarchingCubesTables.TriTable[cubeIndex, i] != -1; i += 3)
@@ -188,16 +194,16 @@ namespace TemperatureVisualization
             m_Mesh.Clear();
             if (vertCount == 0)
             {
-                m_MeshRenderer.enabled = false;
+                if (m_MeshRenderer != null) m_MeshRenderer.enabled = false;
                 return;
             }
 
             m_Mesh.SetVertices(m_Vertices, 0, vertCount);
             m_Mesh.SetColors(m_Colors, 0, vertCount);
-            m_Mesh.SetTriangles(m_Triangles, 0, triCount, 0, true);
+            m_Mesh.SetTriangles(m_Triangles, 0, triCount, 0, false);
             if (m_SmoothNormals) m_Mesh.RecalculateNormals();
-            m_Mesh.RecalculateBounds();
-            m_MeshRenderer.enabled = true;
+            m_Mesh.bounds = new Bounds(Vector3.zero, Vector3.one);
+            if (m_MeshRenderer != null) m_MeshRenderer.enabled = m_Visible;
         }
 
         private void EnsureMaterial(TemperatureColorRamp colorRamp, float tempMin, float tempMax, float isoTemperature)

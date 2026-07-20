@@ -47,15 +47,7 @@ namespace TemperatureVisualization
         private float m_LastTempMin = float.NaN;
         private float m_LastTempMax = float.NaN;
         private float m_LastOpacity = -1f;
-        private Vector3 m_LastBoundsMin;
-        private Vector3 m_LastBoundsMax;
-        private Vector3 m_CachedCenterXY;
-        private Vector3 m_CachedCenterXZ;
-        private Vector3 m_CachedCenterYZ;
-        private Vector3 m_CachedSizeXY;
-        private Vector3 m_CachedSizeXZ;
-        private Vector3 m_CachedSizeYZ;
-        private float m_CachedMinX, m_CachedMaxX, m_CachedMinY, m_CachedMaxY, m_CachedMinZ, m_CachedMaxZ;
+        private Matrix4x4 m_LastBoundsMatrix;
         private bool m_BoundsLayoutDirty = true;
 
         public event Action<SliceAxis, float> SlicePositionChanged;
@@ -95,27 +87,20 @@ namespace TemperatureVisualization
 
             EnsureResources();
 
-            Bounds worldBounds = bounds.WorldBounds;
-            Vector3 min = worldBounds.min;
-            Vector3 max = worldBounds.max;
+            Transform boundsTransform = bounds.transform;
+            Vector3 localCenter = bounds.Center;
+            Vector3 localSize = bounds.Size;
+            Matrix4x4 localToWorld = boundsTransform.localToWorldMatrix;
+            Matrix4x4 worldToLocal = boundsTransform.worldToLocalMatrix;
 
-            if (min != m_LastBoundsMin || max != m_LastBoundsMax)
+            if (m_LastBoundsMatrix != localToWorld || m_BoundsLayoutDirty)
             {
-                m_CachedMinX = min.x; m_CachedMaxX = max.x;
-                m_CachedMinY = min.y; m_CachedMaxY = max.y;
-                m_CachedMinZ = min.z; m_CachedMaxZ = max.z;
-                m_CachedSizeXY = new Vector3(m_CachedMaxX - m_CachedMinX, m_CachedMaxY - m_CachedMinY, 1f);
-                m_CachedSizeXZ = new Vector3(m_CachedMaxX - m_CachedMinX, m_CachedMaxZ - m_CachedMinZ, 1f);
-                m_CachedSizeYZ = new Vector3(m_CachedMaxZ - m_CachedMinZ, m_CachedMaxY - m_CachedMinY, 1f);
-                m_LastBoundsMin = min;
-                m_LastBoundsMax = max;
-                m_MaterialInstance.SetVector("_BoundsMin", min);
-                m_MaterialInstance.SetVector("_BoundsMax", max);
+                m_MaterialInstance.SetMatrix("_WorldToVolume", worldToLocal);
+                m_MaterialInstance.SetVector("_VolumeCenter", localCenter);
+                m_MaterialInstance.SetVector("_VolumeSize", localSize);
+                m_LastBoundsMatrix = localToWorld;
+                m_BoundsLayoutDirty = false;
             }
-
-            float cx = (m_CachedMinX + m_CachedMaxX) * 0.5f;
-            float cy = (m_CachedMinY + m_CachedMaxY) * 0.5f;
-            float cz = (m_CachedMinZ + m_CachedMaxZ) * 0.5f;
 
             Texture tex = interpolator.CurrentTexture;
             Texture texPrev = interpolator.PreviousTexture;
@@ -132,18 +117,15 @@ namespace TemperatureVisualization
 
             if ((sliceMask & 1) != 0)
             {
-                m_CachedCenterXY = new Vector3(cx, cy, Mathf.Lerp(m_CachedMinZ, m_CachedMaxZ, m_PositionXY));
-                DrawSlice(SliceAxis.XY, m_PositionXY, m_CachedCenterXY, m_CachedSizeXY, Quaternion.identity);
+                DrawOrientedSlice(SliceAxis.XY, m_PositionXY, localToWorld, localCenter, localSize);
             }
             if ((sliceMask & 2) != 0)
             {
-                m_CachedCenterXZ = new Vector3(cx, Mathf.Lerp(m_CachedMinY, m_CachedMaxY, m_PositionXZ), cz);
-                DrawSlice(SliceAxis.XZ, m_PositionXZ, m_CachedCenterXZ, m_CachedSizeXZ, s_RotXZ);
+                DrawOrientedSlice(SliceAxis.XZ, m_PositionXZ, localToWorld, localCenter, localSize);
             }
             if ((sliceMask & 4) != 0)
             {
-                m_CachedCenterYZ = new Vector3(Mathf.Lerp(m_CachedMinX, m_CachedMaxX, m_PositionYZ), cy, cz);
-                DrawSlice(SliceAxis.YZ, m_PositionYZ, m_CachedCenterYZ, m_CachedSizeYZ, s_RotYZ);
+                DrawOrientedSlice(SliceAxis.YZ, m_PositionYZ, localToWorld, localCenter, localSize);
             }
         }
 
@@ -155,16 +137,47 @@ namespace TemperatureVisualization
             m_LastBlend = -1f;
             m_LastTempMin = float.NaN;
             m_BoundsLayoutDirty = true;
+            m_LastBoundsMatrix = Matrix4x4.zero;
         }
 
-        private void DrawSlice(SliceAxis axis, float position, Vector3 center, Vector3 size, Quaternion rotation)
+        private void DrawOrientedSlice(
+            SliceAxis axis,
+            float normalizedPosition,
+            Matrix4x4 localToWorld,
+            Vector3 localCenter,
+            Vector3 localSize)
         {
-            // DrawMesh 延迟提交：不能改共享 Material，否则后一次会覆盖前一次的轴/位置。
+            Vector3 localPos = localCenter;
+            Vector3 localScale;
+            Quaternion localRot;
+
+            switch (axis)
+            {
+                case SliceAxis.XY:
+                    localPos.z += (normalizedPosition - 0.5f) * localSize.z;
+                    localScale = new Vector3(localSize.x, localSize.y, 1f);
+                    localRot = Quaternion.identity;
+                    break;
+                case SliceAxis.XZ:
+                    localPos.y += (normalizedPosition - 0.5f) * localSize.y;
+                    localScale = new Vector3(localSize.x, localSize.z, 1f);
+                    localRot = s_RotXZ;
+                    break;
+                default:
+                    localPos.x += (normalizedPosition - 0.5f) * localSize.x;
+                    localScale = new Vector3(localSize.z, localSize.y, 1f);
+                    localRot = s_RotYZ;
+                    break;
+            }
+
+            Matrix4x4 localMatrix = Matrix4x4.TRS(localPos, localRot, localScale);
+            Matrix4x4 worldMatrix = localToWorld * localMatrix;
+
             m_PropertyBlock.SetFloat("_SliceAxis", (float)axis);
-            m_PropertyBlock.SetFloat("_SlicePosition", position);
+            m_PropertyBlock.SetFloat("_SlicePosition", normalizedPosition);
             Graphics.DrawMesh(
                 m_QuadMesh,
-                Matrix4x4.TRS(center, rotation, size),
+                worldMatrix,
                 m_MaterialInstance,
                 gameObject.layer,
                 null,

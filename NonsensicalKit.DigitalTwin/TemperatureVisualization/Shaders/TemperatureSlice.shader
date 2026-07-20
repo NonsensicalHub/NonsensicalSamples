@@ -11,8 +11,8 @@ Shader "TemperatureVisualization/Slice"
         _Blend ("Blend", Range(0, 1)) = 1
         _SliceAxis ("Slice Axis", Float) = 0
         _SlicePosition ("Slice Position", Range(0, 1)) = 0.5
-        _BoundsMin ("Bounds Min", Vector) = (0, 0, 0, 0)
-        _BoundsMax ("Bounds Max", Vector) = (1, 1, 1, 0)
+        _VolumeCenter ("Volume Center", Vector) = (0, 0, 0, 0)
+        _VolumeSize ("Volume Size", Vector) = (1, 1, 1, 0)
     }
 
     SubShader
@@ -51,14 +51,15 @@ Shader "TemperatureVisualization/Slice"
             // 每切片通过 MaterialPropertyBlock 覆盖，须放在 UnityPerMaterial 外。
             float _SliceAxis;
             float _SlicePosition;
+            float4x4 _WorldToVolume;
+            float4 _VolumeCenter;
+            float4 _VolumeSize;
 
             CBUFFER_START(UnityPerMaterial)
                 float _TempMin;
                 float _TempMax;
                 float _Opacity;
                 float _Blend;
-                float4 _BoundsMin;
-                float4 _BoundsMax;
             CBUFFER_END
 
             struct Attributes
@@ -95,11 +96,10 @@ Shader "TemperatureVisualization/Slice"
 
             float4 Frag(Varyings input) : SV_Target
             {
-                float3 boundsMin = _BoundsMin.xyz;
-                float3 boundsMax = _BoundsMax.xyz;
-                float3 boundsSize = max(boundsMax - boundsMin, float3(0.0001, 0.0001, 0.0001));
+                float3 volumeSize = max(_VolumeSize.xyz, float3(0.0001, 0.0001, 0.0001));
                 float invTempRange = rcp(max(_TempMax - _TempMin, 0.0001));
-                float3 uvw = (input.worldPos - boundsMin) / boundsSize;
+                float3 localPos = mul(_WorldToVolume, float4(input.worldPos, 1.0)).xyz;
+                float3 uvw = (localPos - _VolumeCenter.xyz) / volumeSize + 0.5;
 
                 if (_SliceAxis < 0.5)
                     uvw.z = _SlicePosition;

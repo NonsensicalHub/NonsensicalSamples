@@ -68,6 +68,11 @@ namespace TemperatureVisualization
         private float m_MinDistSqr;
         private int m_ResMinus1;
         private int m_ResSq;
+        private float[] m_IdwCoeffs;
+        private int m_CoeffStride;
+        private ulong m_LayoutHash;
+        private bool m_IdwUseSquare;
+        private float m_IdwPowerCached;
 
         public Texture3D CurrentTexture => m_LiveUpdateMode ? m_TextureA : (m_UseTextureA ? m_TextureA : m_TextureB);
         public Texture3D PreviousTexture => m_LiveUpdateMode ? m_TextureA : (m_UseTextureA ? m_TextureB : m_TextureA);
@@ -246,6 +251,19 @@ namespace TemperatureVisualization
             EnsureTextures();
             BuildSensorArrays();
 
+            ulong layoutHash = ComputeLayoutHash();
+            if (layoutHash == m_LayoutHash && m_IdwCoeffs != null)
+            {
+                ApplyTemperatureFromCoeffs();
+                UploadToTexture();
+                return;
+            }
+
+            m_LayoutHash = layoutHash;
+            m_IdwUseSquare = Mathf.Approximately(m_IdwPower, 2f);
+            m_IdwPowerCached = m_IdwPower;
+            EnsureCoeffBuffer();
+
 #if UNITY_WEBGL && !UNITY_EDITOR
             StartCoroutine(ComputeOnMainThreadCoroutine());
 #else
@@ -265,13 +283,16 @@ namespace TemperatureVisualization
                 m_SensorT = new float[count];
             }
 
+            Matrix4x4 localToWorld = m_VolumeBounds != null
+                ? m_VolumeBounds.transform.localToWorldMatrix
+                : Matrix4x4.identity;
             m_SensorCount = count;
             for (int i = 0; i < count; i++)
             {
-                Vector3 p = list[i].Position;
-                m_SensorX[i] = p.x;
-                m_SensorY[i] = p.y;
-                m_SensorZ[i] = p.z;
+                Vector3 world = localToWorld.MultiplyPoint3x4(list[i].Position);
+                m_SensorX[i] = world.x;
+                m_SensorY[i] = world.y;
+                m_SensorZ[i] = world.z;
                 m_SensorT[i] = list[i].Temperature;
             }
         }
@@ -283,16 +304,113 @@ namespace TemperatureVisualization
             {
                 m_WorkBuffer = new float[voxelCount];
                 m_PreviousBuffer = new float[voxelCount];
+                m_IdwCoeffs = null;
+                m_LayoutHash = 0;
             }
 
             if (m_TextureA == null || m_TextureA.width != m_Resolution)
             {
                 ReleaseTextures();
                 m_TextureA = CreateTexture3D(m_Resolution);
+                m_IdwCoeffs = null;
+                m_LayoutHash = 0;
                 if (!m_LiveUpdateMode)
                 {
                     m_TextureB = CreateTexture3D(m_Resolution);
                 }
+            }
+        }
+
+        private void EnsureCoeffBuffer()
+        {
+            int voxelCount = m_ResSq * m_Resolution;
+            m_CoeffStride = m_SensorCount;
+            int required = voxelCount * m_CoeffStride;
+            if (m_IdwCoeffs == null || m_IdwCoeffs.Length < required)
+            {
+                m_IdwCoeffs = new float[required];
+            }
+        }
+
+        private void ApplyTemperatureFromCoeffs()
+        {
+            int voxelCount = m_ResSq * m_Resolution;
+            int count = m_SensorCount;
+            int stride = m_CoeffStride;
+            float[] coeffs = m_IdwCoeffs;
+            float[] buffer = m_WorkBuffer;
+            float[] st = m_SensorT;
+
+            for (int v = 0, c = 0; v < voxelCount; v++, c += stride)
+            {
+                float sum = 0f;
+                for (int s = 0; s < count; s++)
+                {
+                    sum += coeffs[c + s] * st[s];
+                }
+
+                buffer[v] = sum;
+            }
+        }
+
+        private ulong ComputeLayoutHash()
+        {
+            unchecked
+            {
+                ulong hash = 14695981039346656037UL;
+                hash = HashU64(hash, (ulong)(uint)m_Resolution);
+                hash = HashU64(hash, (ulong)m_IdwPower.GetHashCode());
+                hash = HashU64(hash, (ulong)m_MinDistSqr.GetHashCode());
+                hash = HashU64(hash, (ulong)m_SensorCount);
+
+                if (m_VolumeBounds != null)
+                {
+                    Matrix4x4 m = m_VolumeBounds.transform.localToWorldMatrix;
+                    hash = HashU64(hash, (ulong)m.m00.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m01.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m02.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m03.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m10.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m11.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m12.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m13.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m20.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m21.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m22.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m23.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m30.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m31.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m32.GetHashCode());
+                    hash = HashU64(hash, (ulong)m.m33.GetHashCode());
+
+                    Vector3 center = m_VolumeBounds.Center;
+                    Vector3 size = m_VolumeBounds.Size;
+                    hash = HashU64(hash, (ulong)center.x.GetHashCode());
+                    hash = HashU64(hash, (ulong)center.y.GetHashCode());
+                    hash = HashU64(hash, (ulong)center.z.GetHashCode());
+                    hash = HashU64(hash, (ulong)size.x.GetHashCode());
+                    hash = HashU64(hash, (ulong)size.y.GetHashCode());
+                    hash = HashU64(hash, (ulong)size.z.GetHashCode());
+                }
+
+                var list = m_SensorManager.Sensors;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    Vector3 p = list[i].Position;
+                    hash = HashU64(hash, (ulong)p.x.GetHashCode());
+                    hash = HashU64(hash, (ulong)p.y.GetHashCode());
+                    hash = HashU64(hash, (ulong)p.z.GetHashCode());
+                }
+
+                return hash;
+            }
+        }
+
+        private static ulong HashU64(ulong hash, ulong value)
+        {
+            unchecked
+            {
+                return (hash ^ value) * 1099511628211UL;
             }
         }
 
@@ -340,43 +458,45 @@ namespace TemperatureVisualization
         private IEnumerator ComputeOnMainThreadCoroutine()
         {
             m_IsComputing = true;
+            CaptureVolumeGrid(out Matrix4x4 localToWorld, out Vector3 localCenter, out Vector3 localSize);
             int res = m_Resolution;
-            int resSq = m_ResSq;
             int resMinus1 = m_ResMinus1;
-            Bounds bounds = m_VolumeBounds.WorldBounds;
-            Vector3 bmin = bounds.min;
-            float stepX = bounds.size.x / resMinus1;
-            float stepY = bounds.size.y / resMinus1;
-            float stepZ = bounds.size.z / resMinus1;
-            float power = m_IdwPower;
+            float invResMinus1 = 1f / resMinus1;
+            float power = m_IdwPowerCached;
             float minDistSqr = m_MinDistSqr;
             int sensorCount = m_SensorCount;
             float[] sx = m_SensorX;
             float[] sy = m_SensorY;
             float[] sz = m_SensorZ;
             float[] st = m_SensorT;
-            bool useSquare = Mathf.Approximately(power, 2f);
+            bool useSquare = m_IdwUseSquare;
             float[] buffer = m_WorkBuffer;
+            float[] coeffs = m_IdwCoeffs;
+            int coeffStride = m_CoeffStride;
             int slicesPerFrame = Mathf.Max(1, m_WebGlZSlicesPerFrame);
             int zBatch = 0;
+            int voxelIndex = 0;
 
-            float wz = bmin.z;
             for (int z = 0; z < res; z++)
             {
-                float wy = bmin.y;
-                int zBase = z * resSq;
+                float nz = z * invResMinus1;
+                float lz = localCenter.z + (nz - 0.5f) * localSize.z;
                 for (int y = 0; y < res; y++)
                 {
-                    int yBase = y * res;
-                    float wx = bmin.x;
+                    float ny = y * invResMinus1;
+                    float ly = localCenter.y + (ny - 0.5f) * localSize.y;
                     for (int x = 0; x < res; x++)
                     {
-                        buffer[x + yBase + zBase] = ComputeIdw(wx, wy, wz, sx, sy, sz, st, sensorCount, power, minDistSqr, useSquare);
-                        wx += stepX;
+                        float nx = x * invResMinus1;
+                        float lx = localCenter.x + (nx - 0.5f) * localSize.x;
+                        GridPointToWorld(localToWorld, lx, ly, lz, out float wx, out float wy, out float wz);
+                        buffer[voxelIndex] = ComputeIdw(
+                            wx, wy, wz,
+                            sx, sy, sz, st, sensorCount, power, minDistSqr, useSquare,
+                            coeffs, voxelIndex * coeffStride);
+                        voxelIndex++;
                     }
-                    wy += stepY;
                 }
-                wz += stepZ;
 
                 if (++zBatch >= slicesPerFrame)
                 {
@@ -400,15 +520,12 @@ namespace TemperatureVisualization
             m_Cts = new CancellationTokenSource();
             CancellationToken token = m_Cts.Token;
 
+            CaptureVolumeGrid(out Matrix4x4 localToWorld, out Vector3 localCenter, out Vector3 localSize);
             int res = m_Resolution;
             int resSq = m_ResSq;
             int resMinus1 = m_ResMinus1;
-            Bounds bounds = m_VolumeBounds.WorldBounds;
-            Vector3 bmin = bounds.min;
-            float stepX = bounds.size.x / resMinus1;
-            float stepY = bounds.size.y / resMinus1;
-            float stepZ = bounds.size.z / resMinus1;
-            float power = m_IdwPower;
+            float invResMinus1 = 1f / resMinus1;
+            float power = m_IdwPowerCached;
             float minDistSqr = m_MinDistSqr;
             int sensorCount = m_SensorCount;
             float[] sx = m_SensorX;
@@ -416,30 +533,36 @@ namespace TemperatureVisualization
             float[] sz = m_SensorZ;
             float[] st = m_SensorT;
             float[] buffer = m_WorkBuffer;
-            bool useSquare = Mathf.Approximately(power, 2f);
+            float[] coeffs = m_IdwCoeffs;
+            int coeffStride = m_CoeffStride;
+            bool useSquare = m_IdwUseSquare;
 
             try
             {
                 await Task.Run(() =>
                 {
-                    float wz = bmin.z;
+                    int voxelIndex = 0;
                     for (int z = 0; z < res; z++)
                     {
                         token.ThrowIfCancellationRequested();
-                        float wy = bmin.y;
-                        int zBase = z * resSq;
+                        float nz = z * invResMinus1;
+                        float lz = localCenter.z + (nz - 0.5f) * localSize.z;
                         for (int y = 0; y < res; y++)
                         {
-                            int yBase = y * res;
-                            float wx = bmin.x;
+                            float ny = y * invResMinus1;
+                            float ly = localCenter.y + (ny - 0.5f) * localSize.y;
                             for (int x = 0; x < res; x++)
                             {
-                                buffer[x + yBase + zBase] = ComputeIdw(wx, wy, wz, sx, sy, sz, st, sensorCount, power, minDistSqr, useSquare);
-                                wx += stepX;
+                                float nx = x * invResMinus1;
+                                float lx = localCenter.x + (nx - 0.5f) * localSize.x;
+                                GridPointToWorld(localToWorld, lx, ly, lz, out float wx, out float wy, out float wz);
+                                buffer[voxelIndex] = ComputeIdw(
+                                    wx, wy, wz,
+                                    sx, sy, sz, st, sensorCount, power, minDistSqr, useSquare,
+                                    coeffs, voxelIndex * coeffStride);
+                                voxelIndex++;
                             }
-                            wy += stepY;
                         }
-                        wz += stepZ;
                     }
                 }, token);
 
@@ -459,6 +582,23 @@ namespace TemperatureVisualization
             }
         }
 #endif
+
+        private void CaptureVolumeGrid(out Matrix4x4 localToWorld, out Vector3 localCenter, out Vector3 localSize)
+        {
+            localToWorld = m_VolumeBounds.transform.localToWorldMatrix;
+            localCenter = m_VolumeBounds.Center;
+            localSize = m_VolumeBounds.Size;
+        }
+
+        private static void GridPointToWorld(
+            Matrix4x4 localToWorld,
+            float lx, float ly, float lz,
+            out float wx, out float wy, out float wz)
+        {
+            wx = localToWorld.m00 * lx + localToWorld.m01 * ly + localToWorld.m02 * lz + localToWorld.m03;
+            wy = localToWorld.m10 * lx + localToWorld.m11 * ly + localToWorld.m12 * lz + localToWorld.m13;
+            wz = localToWorld.m20 * lx + localToWorld.m21 * ly + localToWorld.m22 * lz + localToWorld.m23;
+        }
 
         private void UploadToTexture()
         {
@@ -495,10 +635,15 @@ namespace TemperatureVisualization
         private static float ComputeIdw(
             float wx, float wy, float wz,
             float[] sx, float[] sy, float[] sz, float[] st,
-            int count, float power, float minDistSqr, bool useSquare)
+            int count, float power, float minDistSqr, bool useSquare,
+            float[] coeffs, int coeffBase)
         {
             if (count == 0) return 0f;
-            if (count == 1) return st[0];
+            if (count == 1)
+            {
+                if (coeffs != null) coeffs[coeffBase] = 1f;
+                return st[0];
+            }
 
             float weightSum = 0f;
             float valueSum = 0f;
@@ -509,11 +654,34 @@ namespace TemperatureVisualization
                 float dy = wy - sy[i];
                 float dz = wz - sz[i];
                 float distSqr = dx * dx + dy * dy + dz * dz;
-                if (distSqr < minDistSqr) return st[i];
+                if (distSqr < minDistSqr)
+                {
+                    if (coeffs != null)
+                    {
+                        for (int j = 0; j < count; j++)
+                        {
+                            coeffs[coeffBase + j] = 0f;
+                        }
 
-                float weight = useSquare ? 1f / distSqr : 1f / Mathf.Pow(Mathf.Sqrt(distSqr), power);
+                        coeffs[coeffBase + i] = 1f;
+                    }
+
+                    return st[i];
+                }
+
+                float weight = useSquare ? 1f / distSqr : Mathf.Pow(distSqr, -power * 0.5f);
+                if (coeffs != null) coeffs[coeffBase + i] = weight;
                 weightSum += weight;
                 valueSum += weight * st[i];
+            }
+
+            if (coeffs != null)
+            {
+                float invWeightSum = 1f / weightSum;
+                for (int i = 0; i < count; i++)
+                {
+                    coeffs[coeffBase + i] *= invWeightSum;
+                }
             }
 
             return weightSum > 0f ? valueSum / weightSum : st[0];

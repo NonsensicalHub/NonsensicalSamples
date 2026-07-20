@@ -1,18 +1,16 @@
 using NaughtyAttributes;
 using UnityEngine;
-#if UNITY_EDITOR
+using UnityEngine.InputSystem.UI;
 using System.Collections.Generic;
 using TMPro;
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEditor.SceneManagement;
+#endif
+
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-#if ENABLE_INPUT_SYSTEM
-using UnityEngine.InputSystem.UI;
-#endif
-#endif
-
 namespace TemperatureVisualization.Demo
 {
     /// <summary>
@@ -177,9 +175,7 @@ namespace TemperatureVisualization.Demo
             max = m_TempMax;
             if (max < min)
             {
-                float swap = min;
-                min = max;
-                max = swap;
+                (min, max) = (max, min);
             }
         }
 

@@ -31,7 +31,7 @@ namespace TemperatureVisualization
             TemperatureSensor sensor = m_Manager.FindSensor(m_SensorId);
             if (sensor == null) return;
 
-            transform.position = sensor.Position;
+            transform.position = m_Manager.GetSensorWorldPosition(sensor);
             var renderer = GetComponent<Renderer>();
             if (renderer != null)
             {

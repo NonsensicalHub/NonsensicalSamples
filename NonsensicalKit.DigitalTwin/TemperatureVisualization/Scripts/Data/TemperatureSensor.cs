@@ -14,7 +14,7 @@ namespace TemperatureVisualization
         [AllowNesting]
         [SerializeField] private string m_Id;
 
-        [Label("世界坐标位置")]
+        [Label("体积本地坐标")]
         [AllowNesting]
         [SerializeField] private Vector3 m_Position;
 
@@ -29,7 +29,7 @@ namespace TemperatureVisualization
             set => m_Id = value;
         }
 
-        /// <summary>世界坐标位置。</summary>
+        /// <summary>相对 <see cref="TemperatureVolumeBounds"/> Transform 的本地坐标。</summary>
         public Vector3 Position
         {
             get => m_Position;

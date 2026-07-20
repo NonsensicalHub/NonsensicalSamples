@@ -30,6 +30,9 @@ namespace TemperatureVisualization
     /// </summary>
     public class TemperatureVisualizationController : MonoBehaviour
     {
+        [SerializeField] private string ID;
+        [SerializeField] private bool m_initShow=true;
+
         [Header("Core")]
         [Label("体积边界")]
         [SerializeField] private TemperatureVolumeBounds m_VolumeBounds;
@@ -145,7 +148,11 @@ namespace TemperatureVisualization
 
         private void Awake()
         {
+#if NONSENSICALKIT_IOCC
+            TemperatureVisualizationIocc.Register(ID, this);
+#endif
             AutoWireReferences();
+            this.gameObject.SetActive(m_initShow);
         }
 
         public void Initialize(
@@ -235,15 +242,8 @@ namespace TemperatureVisualization
 
             if (m_ActiveVolume && m_VolumeRenderer != null)
             {
-                bool volDirty = m_RenderDirty
-                    || m_Interpolator.IsBlending
-                    || !Mathf.Approximately(m_LastTempMin, m_TempMin)
-                    || !Mathf.Approximately(m_LastTempMax, m_TempMax)
-                    || !Mathf.Approximately(m_LastOpacity, m_Opacity);
-                if (volDirty)
-                {
-                    m_VolumeRenderer.ApplySharedState(m_Interpolator, m_ColorRamp, m_VolumeBounds, m_TempMin, m_TempMax, m_Opacity);
-                }
+                // 每帧同步，保证父物体移动/旋转后体积盒与插值场仍对齐
+                m_VolumeRenderer.ApplySharedState(m_Interpolator, m_ColorRamp, m_VolumeBounds, m_TempMin, m_TempMax, m_Opacity);
             }
 
             if (m_RenderDirty
@@ -259,6 +259,8 @@ namespace TemperatureVisualization
 
             if (m_ActiveIso)
             {
+                m_IsosurfaceRenderer?.SyncBoundsTransformIfChanged(m_VolumeBounds);
+
                 m_IsoRebuildTimer += Time.deltaTime;
                 if (m_IsoRebuildTimer >= m_IsoRebuildInterval)
                 {
@@ -277,7 +279,7 @@ namespace TemperatureVisualization
         public void ApplyMode()
         {
             bool volume = m_Mode == VisualizationMode.Volume || m_Mode == VisualizationMode.Combined;
-            bool iso = m_Mode == VisualizationMode.Isosurface || (m_Mode == VisualizationMode.Combined && m_EnableIsosurfaceInCombined);
+            bool iso = IsIsosurfaceModeActive();
 
             if (m_SliceRenderer != null)
             {
@@ -314,8 +316,10 @@ namespace TemperatureVisualization
 
         public void RebuildIsosurface()
         {
+            if (!IsIsosurfaceModeActive()) return;
             if (m_IsosurfaceRenderer == null || m_Interpolator == null || m_ColorRamp == null || m_VolumeBounds == null) return;
             m_IsosurfaceRenderer.RebuildMesh(m_Interpolator, m_ColorRamp, m_VolumeBounds, m_TempMin, m_TempMax);
+            m_IsosurfaceRenderer.SetEnabled(true);
         }
 
         public void ApplyColorPreset(int index)
@@ -347,11 +351,16 @@ namespace TemperatureVisualization
             m_SliceRenderer?.InvalidateCache();
         }
 
+        private bool IsIsosurfaceModeActive()
+        {
+            return m_Mode == VisualizationMode.Isosurface
+                || (m_Mode == VisualizationMode.Combined && m_EnableIsosurfaceInCombined);
+        }
+
         private void RefreshActiveFlags()
         {
             m_ActiveVolume = m_Mode == VisualizationMode.Volume || m_Mode == VisualizationMode.Combined;
-            m_ActiveIso = m_Mode == VisualizationMode.Isosurface
-                || (m_Mode == VisualizationMode.Combined && m_EnableIsosurfaceInCombined);
+            m_ActiveIso = IsIsosurfaceModeActive();
             if (m_SliceRenderer == null)
             {
                 m_ActiveSlices = false;

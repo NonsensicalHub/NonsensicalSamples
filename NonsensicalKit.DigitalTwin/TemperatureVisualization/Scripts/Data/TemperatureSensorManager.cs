@@ -98,6 +98,23 @@ namespace TemperatureVisualization
             return null;
         }
 
+        /// <summary>将传感器本地坐标转为世界坐标。</summary>
+        public Vector3 GetSensorWorldPosition(TemperatureSensor sensor)
+        {
+            if (sensor == null) return Vector3.zero;
+            if (m_VolumeBounds == null) return sensor.Position;
+            return m_VolumeBounds.transform.TransformPoint(sensor.Position);
+        }
+
+        /// <summary>将世界坐标转为体积本地坐标并写入传感器。</summary>
+        public void SetSensorWorldPosition(TemperatureSensor sensor, Vector3 worldPosition)
+        {
+            if (sensor == null) return;
+            sensor.Position = m_VolumeBounds != null
+                ? m_VolumeBounds.transform.InverseTransformPoint(worldPosition)
+                : worldPosition;
+        }
+
         private void Awake()
         {
             if (m_VolumeBounds != null && m_AutoGenerateOnStart && m_Sensors.Count < 4)
@@ -125,6 +142,12 @@ namespace TemperatureVisualization
             NotifyChanged();
         }
 
+        [Button("生成传感器")]
+        private void GenerateSensors()
+        {
+            GenerateDefaultSensors(m_DefaultSensorCount);
+        }
+
         public void GenerateDefaultSensors(int count)
         {
             m_Sensors.Clear();
@@ -137,25 +160,33 @@ namespace TemperatureVisualization
                 return;
             }
 
-            Bounds bounds = m_VolumeBounds.WorldBounds;
+            // 在体积本地空间采样，与插值网格 / 等温面使用同一坐标系
+            Vector3 localCenter = m_VolumeBounds.Center;
+            Vector3 localSize = m_VolumeBounds.Size;
             var random = new System.Random(42);
             for (int i = 0; i < count; i++)
             {
                 float x = (float)random.NextDouble();
                 float y = (float)random.NextDouble();
                 float z = (float)random.NextDouble();
-                Vector3 pos = bounds.min + new Vector3(x * bounds.size.x, y * bounds.size.y, z * bounds.size.z);
+                Vector3 localPos = localCenter + new Vector3(
+                    (x - 0.5f) * localSize.x,
+                    (y - 0.5f) * localSize.y,
+                    (z - 0.5f) * localSize.z);
                 float temp = m_BaseTemperature + (float)(random.NextDouble() * 10f - 5f);
-                m_Sensors.Add(new TemperatureSensor($"sensor_{i}", pos, temp));
+                m_Sensors.Add(new TemperatureSensor($"sensor_{i}", localPos, temp));
             }
 
             NotifyChanged();
             RebuildMarkers();
         }
 
-        public TemperatureSensor AddSensor(Vector3 position, float temperature)
+        public TemperatureSensor AddSensor(Vector3 worldPosition, float temperature)
         {
-            var sensor = new TemperatureSensor(Guid.NewGuid().ToString("N"), position, temperature);
+            Vector3 localPosition = m_VolumeBounds != null
+                ? m_VolumeBounds.transform.InverseTransformPoint(worldPosition)
+                : worldPosition;
+            var sensor = new TemperatureSensor(Guid.NewGuid().ToString("N"), localPosition, temperature);
             m_Sensors.Add(sensor);
             NotifyChanged();
             CreateMarker(sensor);
@@ -237,11 +268,6 @@ namespace TemperatureVisualization
                     m_SimulationDirty = true;
                 }
             }
-
-            if (m_SimulationDirty)
-            {
-                UpdateMarkerColors();
-            }
         }
 
         private bool SetTemperatureInternal(string id, float temperature, bool manualOverride)
@@ -260,7 +286,6 @@ namespace TemperatureVisualization
                     m_ManualOverrides.Add(id);
                 }
 
-                UpdateMarkerColors();
                 NotifyChanged();
                 return true;
             }
@@ -290,9 +315,9 @@ namespace TemperatureVisualization
             if (!m_ShowSensorMarkers) return;
 
             var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            go.transform.SetParent(transform, false);
-            go.transform.position = sensor.Position;
-            go.transform.localScale = Vector3.one * m_MarkerScale;
+            go.transform.position = GetSensorWorldPosition(sensor);
+            go.transform.SetParent(transform, true);
+            ApplyMarkerLocalScale(go.transform);
             Destroy(go.GetComponent<Collider>());
 
             var renderer = go.GetComponent<Renderer>();
@@ -310,6 +335,15 @@ namespace TemperatureVisualization
 
             m_MarkerById[sensor.Id] = go.transform;
             ApplyMarkerColor(renderer, sensor.Temperature);
+        }
+
+        private void ApplyMarkerLocalScale(Transform markerTransform)
+        {
+            Vector3 parentScale = transform.lossyScale;
+            markerTransform.localScale = new Vector3(
+                m_MarkerScale / Mathf.Max(Mathf.Abs(parentScale.x), 1e-6f),
+                m_MarkerScale / Mathf.Max(Mathf.Abs(parentScale.y), 1e-6f),
+                m_MarkerScale / Mathf.Max(Mathf.Abs(parentScale.z), 1e-6f));
         }
 
         private static Material CreateMarkerMaterial()

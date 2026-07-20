@@ -107,17 +107,57 @@ namespace TemperatureVisualization
 
         public Vector3 WorldToNormalized(Vector3 worldPosition)
         {
-            Bounds bounds = WorldBounds;
-            Vector3 local = worldPosition - bounds.min;
-            Vector3 size = bounds.size;
-            return new Vector3(local.x / size.x, local.y / size.y, local.z / size.z);
+            Vector3 local = transform.InverseTransformPoint(worldPosition);
+            return new Vector3(
+                (local.x - m_Center.x) / Mathf.Max(m_Size.x, 1e-6f) + 0.5f,
+                (local.y - m_Center.y) / Mathf.Max(m_Size.y, 1e-6f) + 0.5f,
+                (local.z - m_Center.z) / Mathf.Max(m_Size.z, 1e-6f) + 0.5f);
         }
 
-        public Vector3 NormalizedToWorld(Vector3 normalized)
+        public Vector3 NormalizedToLocal(Vector3 normalized)
         {
-            Bounds bounds = WorldBounds;
-            Vector3 size = bounds.size;
-            return bounds.min + new Vector3(normalized.x * size.x, normalized.y * size.y, normalized.z * size.z);
+            return m_Center + new Vector3(
+                (normalized.x - 0.5f) * m_Size.x,
+                (normalized.y - 0.5f) * m_Size.y,
+                (normalized.z - 0.5f) * m_Size.z);
+        }
+
+        /// <summary>归一化坐标 [0,1] → 单位立方体局部坐标 [-0.5,0.5]，供缩放 Transform 后对齐体积盒。</summary>
+        public Vector3 NormalizedToUnitLocal(Vector3 normalized)
+        {
+            return new Vector3(
+                normalized.x - 0.5f,
+                normalized.y - 0.5f,
+                normalized.z - 0.5f);
+        }
+
+        public Vector3 NormalizedToWorld(Vector3 normalized) => transform.TransformPoint(NormalizedToLocal(normalized));
+
+        public void ApplyVolumeTransform(Transform target) => ApplyVolumeTransformIfChanged(target);
+
+        public bool ApplyVolumeTransformIfChanged(Transform target)
+        {
+            if (target == null) return false;
+
+            Vector3 worldCenter = transform.TransformPoint(m_Center);
+            Vector3 lossy = Abs(transform.lossyScale);
+            Vector3 worldSize = Vector3.Scale(m_Size, lossy);
+            Vector3 parentLossy = target.parent != null ? Abs(target.parent.lossyScale) : Vector3.one;
+            Vector3 localScale = new Vector3(
+                worldSize.x / Mathf.Max(parentLossy.x, 1e-6f),
+                worldSize.y / Mathf.Max(parentLossy.y, 1e-6f),
+                worldSize.z / Mathf.Max(parentLossy.z, 1e-6f));
+
+            if (target.position == worldCenter
+                && target.rotation == transform.rotation
+                && target.localScale == localScale)
+            {
+                return false;
+            }
+
+            target.SetPositionAndRotation(worldCenter, transform.rotation);
+            target.localScale = localScale;
+            return true;
         }
 
         public bool Contains(Vector3 worldPosition) => WorldBounds.Contains(worldPosition);

@@ -29,10 +29,6 @@ namespace TemperatureVisualization
         private float m_LastTempMin = float.NaN;
         private float m_LastTempMax = float.NaN;
         private float m_LastOpacity = -1f;
-        private Vector3 m_LastBoundsMin;
-        private Vector3 m_LastBoundsMax;
-        private Vector3 m_LastBoundsCenter;
-        private Vector3 m_LastBoundsSize;
 
         public int StepCount
         {
@@ -84,24 +80,12 @@ namespace TemperatureVisualization
             if (interpolator == null || colorRamp == null || bounds == null) return false;
 
             EnsureMaterial();
-            Bounds worldBounds = bounds.WorldBounds;
-            Vector3 center = worldBounds.center;
-            Vector3 size = worldBounds.size;
 
-            if (center != m_LastBoundsCenter || size != m_LastBoundsSize)
-            {
-                transform.position = center;
-                transform.rotation = Quaternion.identity;
-                transform.localScale = size;
-                m_LastBoundsCenter = center;
-                m_LastBoundsSize = size;
-            }
+            bounds.ApplyVolumeTransform(transform);
 
             Texture currentTexture = interpolator.CurrentTexture;
             Texture ramp = colorRamp.RampTexture;
             float blend = interpolator.BlendFactor;
-            Vector3 bmin = worldBounds.min;
-            Vector3 bmax = worldBounds.max;
 
             bool changed = false;
             if (m_Renderer.sharedMaterial != m_MaterialInstance)
@@ -150,15 +134,6 @@ namespace TemperatureVisualization
             {
                 m_MaterialInstance.SetFloat("_Opacity", opacity);
                 m_LastOpacity = opacity;
-                changed = true;
-            }
-
-            if (bmin != m_LastBoundsMin || bmax != m_LastBoundsMax)
-            {
-                m_MaterialInstance.SetVector("_BoundsMin", bmin);
-                m_MaterialInstance.SetVector("_BoundsMax", bmax);
-                m_LastBoundsMin = bmin;
-                m_LastBoundsMax = bmax;
                 changed = true;
             }
 
