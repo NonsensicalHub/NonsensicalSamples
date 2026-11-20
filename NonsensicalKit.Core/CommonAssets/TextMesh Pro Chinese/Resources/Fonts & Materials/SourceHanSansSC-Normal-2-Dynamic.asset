@@ -64,7 +64,8 @@ MonoBehaviour:
   materialHashCode: 771031260
   m_Version: 1.1.0
   m_SourceFontFileGUID: 143720a55faf9934b98a002f02ead3c8
-  m_SourceFontFile_EditorRef: {fileID: 12800000, guid: 143720a55faf9934b98a002f02ead3c8, type: 3}
+  m_SourceFontFile_EditorRef: {fileID: 12800000, guid: 143720a55faf9934b98a002f02ead3c8,
+    type: 3}
   m_SourceFontFile: {fileID: 12800000, guid: 143720a55faf9934b98a002f02ead3c8, type: 3}
   m_AtlasPopulationMode: 1
   m_FaceInfo:
@@ -189,7 +190,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: SourceHanSansSC-Normal-2 Atlas Material
-  m_Shader: {fileID: 4800000, guid: 68e6db2ebdc24f95958faec2be5558d6, type: 3}
+  m_Shader: {fileID: 4800000, guid: 6953aae28425df542af91adb02d41ff5, type: 3}
   m_ValidKeywords: []
   m_InvalidKeywords: []
   m_LightmapFlags: 4

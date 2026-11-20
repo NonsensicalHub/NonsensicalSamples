@@ -2293,8 +2293,11 @@ MonoBehaviour:
   m_columnWidth: []
   m_rowHeight: []
   m_cellPrefab: {fileID: 1024170795}
-  m_columnPrefab: {fileID: 0}
-  m_rowPrefab: {fileID: 0}
+  m_columnImagePrefabs: []
+  m_rowImagePrefabs: []
+  m_cellParent: {fileID: 259535994}
+  m_rowParent: {fileID: 0}
+  m_columnParent: {fileID: 0}
   m_defaultWidth: 100
   m_defaultHeight: 30
   m_borderSize: {x: 5, y: 5}

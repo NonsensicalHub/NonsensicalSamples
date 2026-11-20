@@ -1,0 +1,25 @@
+{
+    "name": "NonsensicalKit.DigitalTwin.MQTT",
+    "rootNamespace": "",
+    "references": [
+        "NonsensicalKit.Core.Runtime",
+        "NonsensicalKit.NaughtyAttributes"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "MQTTnet.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.nonsensicallab.nonsensicalkit.webgl",
+            "expression": "0.0.0",
+            "define": "NK_WEBGL"
+        }
+    ],
+    "noEngineReferences": false
+}
