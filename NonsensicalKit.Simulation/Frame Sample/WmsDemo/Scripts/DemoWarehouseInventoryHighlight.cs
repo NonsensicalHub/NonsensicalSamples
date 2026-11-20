@@ -4,6 +4,8 @@ using NonsensicalKit.Core;
 using UnityEngine;
 using Random = UnityEngine.Random;
 
+namespace Frame.Sample.WmsDemo
+{
 /// <summary>
 /// 多色盘点高亮 Demo：从 IOCC 取全库货物，显式建多批，每批一种颜色。
 /// WarehouseInventoryReview 会按批次数动态 Instantiate 盘点库层。
@@ -138,4 +140,5 @@ public class DemoWarehouseInventoryHighlight : MonoBehaviour
     }
 
     #endregion
+}
 }
